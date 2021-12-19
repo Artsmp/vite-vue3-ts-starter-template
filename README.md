@@ -422,15 +422,162 @@ VITE_APP_API_URL='/api'
 VITE_APP_API_URL='/prod-api'
 ```
 
-配置 ts 智能提示：
+配置 ts 智能提示，在 env.d.ts 中新增如下内容：
 
+```ts
+......
 
+interface ImportMetaEnv {
+  readonly VITE_APP_API_URL: string;
+}
 
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+```
 
+## 请求封装
 
+#### 安装
 
+```
+pnpm add axios nprogress
+pnpm add @types/nprogress -D
+```
 
+新建 `api/http.ts` ：
 
+```ts
+import { HTTP_OK, NO_PERMISSION } from '@/app/keys';
+import router from '@/router';
+import axios from 'axios';
+import nProgress from 'nprogress';
 
+const request = axios.create({
+  baseURL: import.meta.env.VITE_APP_API_URL,
+  timeout: 10000,
+});
 
+request.interceptors.request.use(
+  (config) => {
+    return config;
+  },
+  (error) => error
+);
+
+request.interceptors.response.use((response) => {
+  const { code, msg } = response.data || {};
+  if (code === HTTP_OK) {
+    return Promise.reject(msg);
+  }
+  if (code === NO_PERMISSION) {
+    router.push({ name: 'Login' }).then();
+    return Promise.reject(msg);
+  }
+  return response;
+});
+
+export interface ResType<T> {
+  code: number;
+  data?: T;
+  msg: string;
+  err?: string;
+}
+
+export interface Http {
+  get<T>(url: string, params?: unknown): Promise<ResType<T>>;
+  post<T>(url: string, data?: unknown): Promise<ResType<T>>;
+  upload<T>(url: string, data?: unknown): Promise<ResType<T>>;
+  download(url: string): void;
+}
+
+const http: Http = {
+  get(url, params) {
+    return new Promise((resolve, reject) => {
+      nProgress.start();
+      request
+        .get(url, { params })
+        .then((res) => {
+          nProgress.done();
+          resolve(res.data);
+        })
+        .catch((err) => {
+          nProgress.done();
+          reject(err.data);
+        });
+    });
+  },
+  post(url, data) {
+    return new Promise((resolve, reject) => {
+      nProgress.start();
+      request
+        .post(url, data)
+        .then((res) => {
+          nProgress.done();
+          resolve(res.data);
+        })
+        .catch((err) => {
+          nProgress.done();
+          reject(err.data);
+        });
+    });
+  },
+  upload(url, file) {
+    return new Promise((resolve, reject) => {
+      nProgress.start();
+      request
+        .post(url, file, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        })
+        .then((res) => {
+          nProgress.done();
+          resolve(res.data);
+        })
+        .catch((err) => {
+          nProgress.done();
+          reject(err.data);
+        });
+    });
+  },
+  download(url) {
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = url;
+    iframe.onload = () => {
+      document.body.removeChild(iframe);
+    };
+    document.body.appendChild(iframe);
+  },
+};
+
+export default http;
+```
+
+新建 `api/login/login.ts and types.ts` ：
+
+```ts
+// login.ts
+import http from '../http';
+import type * as T from './types';
+
+const loginApi: T.ILoginApi = {
+  login(params) {
+    return http.post('/login', params);
+  },
+};
+export default loginApi;
+
+// types.ts
+export interface ILoginParams {
+  username: string;
+  password: string | number;
+}
+export interface ILoginApi {
+  login: (params: ILoginParams) => Promise<any>;
+}
+```
+
+> 还可以使用现有的轮子：[VueRequest](https://www.attojs.com/)
 
